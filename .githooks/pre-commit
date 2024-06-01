@@ -1,0 +1,58 @@
+#!/bin/bash
+
+# Run some pre commit checks on the Go source code. Prevent the commit if any errors are found
+echo "Running pre-commit checks on your code..."
+
+STAGED_RUST_FILES=$(git diff --cached --name-only | grep ".rs$")
+
+if [[ "$STAGED_RUST_FILES" != "" ]]; then
+  # cargo-fmt
+  echo "Running cargo-fmt"
+  cargo fmt -- --check
+  rc=$?
+
+  if [[ $rc -ne 0 ]]; then
+    printf "cargo-fmt FAILED\n"
+    exit $rc
+  fi
+
+  # cargo-deny
+  echo "Running cargo-deny"
+  cargo-deny --all-features check
+  rc=$?
+  if [[ $rc -ne 0 ]]; then
+    printf "cargo-deny FAILED\n"
+    exit $rc
+  fi
+
+  # cargo-check
+  echo "Running cargo-check"
+  cargo check --all
+  rc=$?
+  if [[ $rc -ne 0 ]]; then
+    printf "cargo-check FAILED\n"
+    exit $rc
+  fi
+
+  # cargo-clippy
+  echo "Running cargo-clippy"
+  cargo clippy --all-targets --all-features --tests --benches -- -D warnings
+  rc=$?
+  if [[ $rc -ne 0 ]]; then
+    printf "cargo-clippy FAILED\n"
+    exit $rc
+  fi
+
+  # cargo-test
+  echo "Running cargo-test"
+  cargo nextest run --all-features
+  rc=$?
+  if [[ $rc -ne 0 ]]; then
+    printf "cargo-test FAILED\n"
+    exit $rc
+  fi
+else
+  printf "rust test SKIPPED\n"
+fi
+
+exit 0
