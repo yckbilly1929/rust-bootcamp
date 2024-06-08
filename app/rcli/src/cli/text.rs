@@ -1,13 +1,13 @@
 use crate::{
-    get_content, get_reader, process_text_key_generate, process_text_sign, process_text_verify,
-    CmdExector,
+    get_content, get_reader, process_text_decrypt, process_text_encrypt, process_text_key_generate,
+    process_text_sign, process_text_verify, trim_trailing_newline, CmdExector,
 };
 
 use super::{verify_file, verify_path};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use clap::Parser;
 use enum_dispatch::enum_dispatch;
-use std::{fmt, path::PathBuf, str::FromStr};
+use std::{fmt, io::Cursor, path::PathBuf, str::FromStr};
 use tokio::fs;
 
 #[derive(Debug, Parser)]
@@ -19,6 +19,10 @@ pub enum TextSubCommand {
     Verify(TextVerifyOpts),
     #[command(about = "Generate a random blake3 key or ed25519 key pair")]
     Generate(KeyGenerateOpts),
+    #[command(about = "Encrypt a message with a private key")]
+    Encrypt(TextEncryptOpts),
+    #[command(about = "Decrypt a message with a private key")]
+    Decrypt(TextDecryptOpts),
 }
 
 #[derive(Debug, Parser)]
@@ -51,10 +55,35 @@ pub struct KeyGenerateOpts {
     pub output_path: PathBuf,
 }
 
+#[derive(Debug, Parser)]
+pub struct TextEncryptOpts {
+    #[arg(short, long, value_parser = verify_file, default_value = "-")]
+    pub input: String,
+    #[arg(short, long, value_parser = verify_file)]
+    pub key: String,
+    #[arg(long, default_value = "chacha20", value_parser = parse_text_encrypt_format)]
+    pub format: TextEncryptFormat,
+}
+
+#[derive(Debug, Parser)]
+pub struct TextDecryptOpts {
+    #[arg(short, long, value_parser = verify_file, default_value = "-")]
+    pub input: String,
+    #[arg(short, long, value_parser = verify_file)]
+    pub key: String,
+    #[arg(long, default_value = "chacha20", value_parser = parse_text_encrypt_format)]
+    pub format: TextEncryptFormat,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum TextSignFormat {
     Blake3,
     Ed25519,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum TextEncryptFormat {
+    ChaCha20,
 }
 
 fn parse_text_sign_format(format: &str) -> Result<TextSignFormat, anyhow::Error> {
@@ -83,6 +112,35 @@ impl From<TextSignFormat> for &'static str {
 }
 
 impl fmt::Display for TextSignFormat {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", Into::<&str>::into(*self))
+    }
+}
+
+fn parse_text_encrypt_format(format: &str) -> Result<TextEncryptFormat, anyhow::Error> {
+    format.parse()
+}
+
+impl FromStr for TextEncryptFormat {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "chacha20" => Ok(TextEncryptFormat::ChaCha20),
+            _ => Err(anyhow::anyhow!("Invalid format")),
+        }
+    }
+}
+
+impl From<TextEncryptFormat> for &'static str {
+    fn from(format: TextEncryptFormat) -> Self {
+        match format {
+            TextEncryptFormat::ChaCha20 => "chacha20",
+        }
+    }
+}
+
+impl fmt::Display for TextEncryptFormat {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", Into::<&str>::into(*self))
     }
@@ -121,6 +179,36 @@ impl CmdExector for KeyGenerateOpts {
         for (k, v) in key {
             fs::write(self.output_path.join(k), v).await?;
         }
+        Ok(())
+    }
+}
+
+impl CmdExector for TextEncryptOpts {
+    async fn execute(self) -> anyhow::Result<()> {
+        let mut reader = get_reader(&self.input)?;
+        let key = get_content(&self.key)?;
+        let ciphertext = process_text_encrypt(&mut reader, &key, self.format)?;
+        // base64 output
+        let encoded = URL_SAFE_NO_PAD.encode(ciphertext);
+        println!("{}", encoded);
+        Ok(())
+    }
+}
+
+impl CmdExector for TextDecryptOpts {
+    async fn execute(self) -> anyhow::Result<()> {
+        let mut reader = get_reader(&self.input)?;
+        let key = get_content(&self.key)?;
+
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf)?;
+        buf = trim_trailing_newline(buf);
+        let decoded = URL_SAFE_NO_PAD.decode::<&[u8]>(buf.as_ref())?;
+        let mut cursor = Cursor::new(decoded);
+
+        let plaintext = process_text_decrypt(&mut cursor, &key, self.format)?;
+
+        println!("{}", String::from_utf8(plaintext)?);
         Ok(())
     }
 }

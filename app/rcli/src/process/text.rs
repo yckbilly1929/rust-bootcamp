@@ -1,5 +1,8 @@
-use crate::{process_genpass, TextSignFormat};
+use crate::{process_genpass, TextEncryptFormat, TextSignFormat};
 use anyhow::Result;
+use chacha20poly1305::{
+    aead::Aead, AeadCore, ChaCha20Poly1305, ChaChaPoly1305, Key, KeyInit, Nonce,
+};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand::rngs::OsRng;
 use std::{collections::HashMap, io::Read};
@@ -14,6 +17,12 @@ pub trait TextVerifier {
     fn verify(&self, reader: &mut dyn Read, sig: &[u8]) -> Result<bool>;
 }
 
+pub trait TextCrypto {
+    fn encrypt(&self, reader: &mut dyn Read) -> Result<Vec<u8>>;
+
+    fn decrypt(&self, reader: &mut dyn Read) -> Result<Vec<u8>>;
+}
+
 pub struct Blake3 {
     key: [u8; 32],
 }
@@ -24,6 +33,10 @@ pub struct Ed25519Signer {
 
 pub struct Ed25519Verifier {
     key: VerifyingKey,
+}
+
+pub struct ChaCha20 {
+    cipher: ChaCha20Poly1305,
 }
 
 impl TextSigner for Blake3 {
@@ -60,6 +73,38 @@ impl TextVerifier for Ed25519Verifier {
         let sig = (&sig[..64]).try_into()?;
         let signature = Signature::from_bytes(sig);
         Ok(self.key.verify(&buf, &signature).is_ok())
+    }
+}
+
+impl TextCrypto for ChaCha20 {
+    fn encrypt(&self, reader: &mut dyn Read) -> Result<Vec<u8>> {
+        let nonce = Self::generate();
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf)?;
+
+        let ciphertext = &self.cipher.encrypt(&nonce, buf.as_ref()).unwrap();
+
+        let mut enc = nonce.to_vec();
+        enc.push(b'.');
+        enc.extend_from_slice(ciphertext);
+
+        Ok(enc)
+    }
+
+    fn decrypt(&self, reader: &mut dyn Read) -> Result<Vec<u8>> {
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf)?;
+
+        // find the position of '.'
+        if let Some(pos) = buf.iter().position(|&b| b == 46) {
+            let nonce = Nonce::from_slice(&buf[..pos]);
+            let ciphertext = &buf[pos + 1..]; // TODO: what if empty
+
+            let plaintext = &self.cipher.decrypt(nonce, ciphertext).unwrap();
+            Ok(plaintext.to_vec())
+        } else {
+            Err(anyhow::anyhow!("Invalid ciphertext format"))
+        }
     }
 }
 
@@ -116,6 +161,25 @@ impl Ed25519Verifier {
     }
 }
 
+impl ChaCha20 {
+    pub fn try_new(key: impl AsRef<[u8]>) -> Result<Self> {
+        let key = key.as_ref();
+        let key = Key::clone_from_slice(&key[..32]);
+        // // convert &[u8] to &[u8; 32]
+        let cipher = ChaChaPoly1305::new(&key);
+
+        Ok(Self { cipher })
+    }
+
+    // pub fn new(cipher: ChaCha20Poly1305) -> Self {
+    //     Self { cipher }
+    // }
+
+    fn generate() -> Nonce {
+        ChaCha20Poly1305::generate_nonce(&mut OsRng)
+    }
+}
+
 pub fn process_text_sign(
     reader: &mut dyn Read,
     key: &[u8], // (ptr, length)
@@ -149,8 +213,34 @@ pub fn process_text_key_generate(format: TextSignFormat) -> Result<HashMap<&'sta
     }
 }
 
+pub fn process_text_encrypt(
+    reader: &mut dyn Read,
+    key: &[u8],
+    format: TextEncryptFormat,
+) -> Result<Vec<u8>> {
+    let crypto: Box<dyn TextCrypto> = match format {
+        TextEncryptFormat::ChaCha20 => Box::new(ChaCha20::try_new(key)?),
+    };
+
+    crypto.encrypt(reader)
+}
+
+pub fn process_text_decrypt(
+    reader: &mut dyn Read,
+    key: &[u8],
+    format: TextEncryptFormat,
+) -> Result<Vec<u8>> {
+    let crypto: Box<dyn TextCrypto> = match format {
+        TextEncryptFormat::ChaCha20 => Box::new(ChaCha20::try_new(key)?),
+    };
+
+    crypto.decrypt(reader)
+}
+
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+
     use super::*;
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 
@@ -175,6 +265,18 @@ mod tests {
         let sig = URL_SAFE_NO_PAD.decode(sig)?;
         let ret = process_text_verify(&mut reader, KEY, &sig, format)?;
         assert!(ret);
+        Ok(())
+    }
+
+    #[test]
+    fn test_process_text_encrypt_decrypt() -> Result<()> {
+        let data = b"hello world";
+        let format = TextEncryptFormat::ChaCha20;
+        let enc = process_text_encrypt(&mut &data[..], KEY, format)?;
+        let mut cursor = Cursor::new(enc);
+
+        let dec = process_text_decrypt(&mut cursor, KEY, format)?;
+        assert_eq!(data, dec.as_slice());
         Ok(())
     }
 }
