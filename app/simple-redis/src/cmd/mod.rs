@@ -1,6 +1,7 @@
 mod conn;
 mod hmap;
 mod map;
+mod removal;
 
 use crate::{Backend, RespArray, RespError, RespFrame, SimpleString};
 use enum_dispatch::enum_dispatch;
@@ -39,6 +40,7 @@ pub enum Command {
     HGet(HGet),
     HSet(HSet),
     HGetAll(HGetAll),
+    Del(Del),
 
     // unrecognized command
     Unrecognized(Unrecognized),
@@ -80,6 +82,11 @@ pub struct HGetAll {
 }
 
 #[derive(Debug)]
+pub struct Del {
+    keys: Vec<String>,
+}
+
+#[derive(Debug)]
 pub struct Unrecognized;
 
 impl TryFrom<RespFrame> for Command {
@@ -105,6 +112,7 @@ impl TryFrom<RespArray> for Command {
                 b"hget" => Ok(HGet::try_from(v)?.into()),
                 b"hset" => Ok(HSet::try_from(v)?.into()),
                 b"hgetall" => Ok(HGetAll::try_from(v)?.into()),
+                b"del" => Ok(Del::try_from(v)?.into()),
                 _ => Ok(Unrecognized.into()),
             },
             _ => Err(CommandError::InvalidCommand(

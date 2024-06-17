@@ -62,4 +62,21 @@ impl Backend {
     pub fn hgetall(&self, key: &str) -> Option<DashMap<String, RespFrame>> {
         self.hmap.get(key).map(|v| v.clone())
     }
+
+    // TODO: return k-v pairs?
+    pub fn del(&self, keys: &[&str]) -> Vec<String> {
+        let map_removed = keys
+            .iter()
+            .filter_map(|&k| self.map.remove(k).map(|(k, _v)| k))
+            .collect::<Vec<String>>();
+        let hmap_removed = keys
+            .iter()
+            .filter_map(|&k| self.hmap.remove(k).map(|(k, _v)| k))
+            .collect::<Vec<String>>();
+
+        let mut combined = map_removed;
+        combined.extend(hmap_removed);
+
+        combined
+    }
 }
