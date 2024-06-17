@@ -26,7 +26,6 @@ impl RespDecodeV2 for RespFrame {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{RespNullArray, RespNullBulkString};
     use std::collections::BTreeMap;
 
     #[test]
@@ -103,7 +102,7 @@ mod tests {
     fn respv2_null_bulk_string_should_work() {
         let mut buf = BytesMut::from("$-1\r\n");
         let frame = RespFrame::decode(&mut buf).unwrap();
-        assert_eq!(frame, RespFrame::NullBulkString(RespNullBulkString));
+        assert_eq!(frame, RespFrame::BulkString("".into()));
     }
 
     #[test]
@@ -140,7 +139,7 @@ mod tests {
     fn respv2_null_array_should_work() {
         let mut buf = BytesMut::from("*-1\r\n");
         let frame = RespFrame::decode(&mut buf).unwrap();
-        assert_eq!(frame, RespFrame::NullArray(RespNullArray));
+        assert_eq!(frame, RespFrame::Array(vec![].into()));
     }
 
     #[test]
