@@ -45,6 +45,33 @@ impl AppState {
         }
     }
 
+    pub async fn batch_shorten(&self, urls: Vec<String>) -> Result<Vec<String>, AppError> {
+        // TODO: batch select to verify, and batch reserve id?
+        if urls.is_empty() {
+            return Err(AppError::InvalidRequest("invalid param length".to_string()));
+        }
+
+        let ids = urls.iter().map(|_| nanoid!(6)).collect();
+
+        let ret = sqlx::query(
+            r#"
+            INSERT INTO short_url (id, url) SELECT * FROM unnest($1::text[], $2::text[])
+        "#,
+        )
+        .bind(&ids)
+        .bind(&urls)
+        .execute(&self.db)
+        .await;
+
+        match ret {
+            Ok(_) => {
+                // TODO: validate rows affected?
+                Ok(ids)
+            }
+            Err(e) => Err(AppError::SqlxError(e)),
+        }
+    }
+
     pub async fn get_url(&self, id: &str) -> Result<String, AppError> {
         let ent = sqlx::query_as::<_, ShortUrl>("SELECT url FROM short_url WHERE id = $1")
             .bind(id)

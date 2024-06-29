@@ -12,13 +12,24 @@ use crate::{error::AppError, AppJson, AppState};
 
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct ShortenReq {
-    #[garde(length(min = 1, max = 256))]
+    #[garde(url)]
     url: String,
 }
 
 #[derive(Debug, Serialize)]
 struct ShortenRes {
     url: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct BatchShortenReq {
+    #[garde(length(min = 1, max = 256), inner(url))]
+    urls: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct BatchShortenRes {
+    list: Vec<String>,
 }
 
 pub async fn shorten(
@@ -32,6 +43,24 @@ pub async fn shorten(
 
     let body = Json(ShortenRes {
         url: format!("http://{}/{}", state.app_addr, ent.id),
+    });
+
+    Ok((StatusCode::CREATED, body))
+}
+
+pub async fn batch_shorten(
+    State(state): State<AppState>,
+    AppJson(req): AppJson<BatchShortenReq>,
+) -> Result<impl IntoResponse, AppError> {
+    req.validate()
+        .map_err(|e| AppError::InvalidRequest(e.to_string()))?;
+    let ents = state.batch_shorten(req.urls).await?;
+
+    let body = Json(BatchShortenRes {
+        list: ents
+            .iter()
+            .map(|v| format!("http://{}/{}", state.app_addr, v))
+            .collect(),
     });
 
     Ok((StatusCode::CREATED, body))

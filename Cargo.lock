@@ -1151,6 +1151,7 @@ dependencies = [
  "compact_str",
  "garde_derive",
  "smallvec",
+ "url",
 ]
 
 [[package]]
@@ -3098,6 +3099,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
