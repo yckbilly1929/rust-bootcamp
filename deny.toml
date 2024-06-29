@@ -121,6 +121,7 @@ exceptions = [
     { allow = ["ISC"], crate = "untrusted" },
     { allow = ["ISC"], crate = "simple_asn1" },
     { allow = ["ISC", "OpenSSL"], crate = "ring" },
+    { allow = ["ISC"], crate = "rustls-webpki" },
 ]
 clarify = [
     { name = "ring", expression = "MIT AND ISC AND OpenSSL", license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]}
