@@ -46,6 +46,10 @@ pub struct RemindRequest {
     pub id: ::prost::alloc::string::String,
     #[prost(uint32, tag = "2")]
     pub last_visit_interval: u32,
+    /// content ids for started_but_not_finished
+    #[prost(uint32, repeated, tag = "3")]
+    #[builder(setter(each(name = "content_id", into)))]
+    pub content_ids: ::prost::alloc::vec::Vec<u32>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

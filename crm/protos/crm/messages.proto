@@ -26,6 +26,8 @@ message RecallResponse {
 message RemindRequest {
   string id = 1;
   uint32 last_visit_interval = 2;
+  // content ids for started_but_not_finished
+  repeated uint32 content_ids = 3;
 }
 
 message RemindResponse {

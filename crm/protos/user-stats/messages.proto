@@ -7,6 +7,11 @@ import "google/protobuf/timestamp.proto";
 message User {
   string email = 1;
   string name = 2;
+  map<string, IdContent> contents = 3;
+}
+
+message IdContent {
+  repeated uint32 ids = 1;
 }
 
 message QueryRequest {

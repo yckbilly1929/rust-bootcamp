@@ -8,15 +8,15 @@ fn main() -> Result<()> {
     builder
         .out_dir("src/pb")
         .with_serde(
-            &["User"],
+            &["User, IdContent"],
             true,
             true,
             Some(&[r#"#[serde(rename_all = "camelCase")]"#]),
         )
-        .with_sqlx_from_row(&["User"], None)
         .with_derive_builder(
             &[
                 "User",
+                "IdContent",
                 "QueryRequest",
                 "RawQueryRequest",
                 "TimeQuery",
@@ -25,7 +25,12 @@ fn main() -> Result<()> {
             None,
         )
         .with_field_attributes(
-            &["User.email", "User.name", "RawQueryRequest.query"],
+            &[
+                "User.email",
+                "User.name",
+                "User.contents",
+                "RawQueryRequest.query",
+            ],
             &[r#"#[builder(setter(into))]"#],
         )
         .with_field_attributes(

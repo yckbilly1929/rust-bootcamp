@@ -1,15 +1,39 @@
-use std::fmt;
+use std::{collections::HashMap, fmt};
 
 use chrono::{DateTime, TimeZone, Utc};
 use itertools::Itertools;
 use prost_types::Timestamp;
+use sqlx::FromRow;
 use tonic::{Response, Status};
 use tracing::info;
 
 use crate::{
-    pb::{QueryRequest, QueryRequestBuilder, RawQueryRequest, TimeQuery, User},
+    pb::{IdContent, IdQuery, QueryRequest, QueryRequestBuilder, RawQueryRequest, TimeQuery, User},
     ResponseStream, ServiceResult, UserStatsService,
 };
+
+#[derive(FromRow, Debug, Clone)]
+struct UserDto {
+    email: String,
+    name: String,
+    started_but_not_finished: Vec<i32>,
+}
+
+impl UserDto {
+    fn into_wire_model(self: UserDto) -> User {
+        let mut contents = HashMap::new();
+        contents.insert(
+            "started_but_not_finished".to_string(),
+            ids_to_content(self.started_but_not_finished),
+        );
+
+        User {
+            email: self.email,
+            name: self.name,
+            contents,
+        }
+    }
+}
 
 impl UserStatsService {
     pub async fn query(&self, query: QueryRequest) -> ServiceResult<ResponseStream> {
@@ -20,7 +44,7 @@ impl UserStatsService {
 
     pub async fn raw_query(&self, req: RawQueryRequest) -> ServiceResult<ResponseStream> {
         // TODO: query must only return email and name, so we should use sqlparser to parse the query
-        let Ok(ret) = sqlx::query_as::<_, User>(&req.query)
+        let Ok(ret) = sqlx::query_as::<_, UserDto>(&req.query)
             .fetch_all(&self.inner.pool)
             .await
         else {
@@ -31,7 +55,11 @@ impl UserStatsService {
         };
 
         Ok(Response::new(Box::pin(futures::stream::iter(
-            ret.into_iter().map(Ok),
+            ret.into_iter()
+                .map(|x| x.into_wire_model())
+                .collect::<Vec<User>>()
+                .into_iter()
+                .map(Ok),
         ))))
     }
 }
@@ -39,7 +67,8 @@ impl UserStatsService {
 impl fmt::Display for QueryRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // generate sql based on query
-        let mut sql = "SELECT email, name FROM user_stats WHERE ".to_string();
+        let mut sql =
+            "SELECT email, name, started_but_not_finished FROM user_stats WHERE ".to_string();
 
         let time_conditions = self
             .timestamps
@@ -85,6 +114,17 @@ impl QueryRequest {
             .timestamp((name.to_string(), tq))
             .build()
             .expect("Failed to build query request")
+    }
+
+    pub fn add_content_ids_constraint(&mut self, constraint_name: &str, content_ids: Vec<u32>) {
+        self.ids
+            .insert(constraint_name.to_string(), IdQuery { ids: content_ids });
+    }
+}
+
+fn ids_to_content(ids: Vec<i32>) -> IdContent {
+    IdContent {
+        ids: ids.iter().map(|&x| x as u32).collect(),
     }
 }
 
@@ -142,7 +182,7 @@ mod tests {
         let sql = query.to_string();
         assert_eq!(
             sql,
-            "SELECT email, name FROM user_stats WHERE created_at BETWEEN '2024-01-01T00:00:00+00:00' AND '2024-01-02T00:00:00+00:00'"
+            "SELECT email, name, started_but_not_finished FROM user_stats WHERE created_at BETWEEN '2024-01-01T00:00:00+00:00' AND '2024-01-02T00:00:00+00:00'"
         );
     }
 

@@ -9,7 +9,7 @@ fn main() -> Result<()> {
         .out_dir("src/pb")
         .with_derive_builder(&["WelcomeRequest", "RecallRequest", "RemindRequest"], None)
         .with_field_attributes(
-            &["WelcomeRequest.content_ids"],
+            &["WelcomeRequest.content_ids", "RemindRequest.content_ids"],
             &[r#"#[builder(setter(each(name="content_id", into)))]"#],
         )
         .compile(
